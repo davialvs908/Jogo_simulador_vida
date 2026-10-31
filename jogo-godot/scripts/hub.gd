@@ -13,6 +13,7 @@ const CityRadio = preload("res://scripts/city_radio.gd")
 const CityPanels = preload("res://scripts/city_panels.gd")
 const Props = preload("res://scripts/props.gd")
 const Mats = preload("res://scripts/materials.gd")
+const CityInterior = preload("res://scripts/city_interior.gd")
 
 var world_env: WorldEnvironment
 var _last_df := -1.0
@@ -41,7 +42,11 @@ const SPOTS := {
 	"beach":      {"pos": Vector3(-30, 0, 138), "size": Vector3(12, 4, 6),  "color": Color(0.85, 0.65, 0.35), "label": "Quiosque da Praia", "hours": [8.0, 20.0]},
 	"board":      {"pos": Vector3(30, 0, -82),  "size": Vector3(10, 4, 6),  "color": Color(0.20, 0.55, 0.50), "label": "Central de Missões"},
 }
-const SPOT_STYLE := {"stadium": "industrial", "cars": "shop", "cafe": "shop", "realestate": "office", "mall": "shop", "gym": "industrial"}
+const SPOT_STYLE := {
+	"stadium": "industrial", "cars": "shop", "cafe": "shop", "realestate": "office", "mall": "shop", "gym": "industrial",
+	"restaurant": "shop", "cinema": "office", "clinic": "office", "bank": "office", "electro": "shop",
+	"gas": "shop", "beach": "house", "board": "office",
+}
 const FILLERS := [
 	Vector3(82, 0, -82), Vector3(140, 0, -82), Vector3(140, 0, 82), Vector3(82, 0, 82), Vector3(-35, 0, 75),
 ]
@@ -123,6 +128,8 @@ var _fuel_warn := 100.0
 var _minimap_t := 0
 var horn_player: AudioStreamPlayer
 var _last_district := ""
+var _last_glow := -1.0
+var interior
 
 func _ready() -> void:
 	city = CityState.new()
@@ -130,6 +137,8 @@ func _ready() -> void:
 	_build_world()
 	_build_home()
 	_build_player()
+	interior = CityInterior.new()
+	interior.setup(self)
 	_build_maya()
 	peds_sys = CityPeds.new()
 	peds_sys.setup(self)
@@ -186,7 +195,10 @@ func _build_world() -> void:
 
 	sun = DirectionalLight3D.new()
 	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 120.0
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+	sun.directional_shadow_max_distance = 180.0
+	sun.shadow_blur = 1.4
+	sun.light_angular_distance = 0.5
 	add_child(sun)
 
 	world = CityWorld.new()
@@ -209,6 +221,17 @@ func _build_world() -> void:
 		var h := rng.randf_range(8.0, 22.0)
 		var st: String = ["office", "apartment", "apartment", "industrial"][rng.randi() % 4]
 		_building(p, Color(0.22, 0.24, 0.28).lerp(Color(0.45, 0.38, 0.36), rng.randf()), Vector3(rng.randf_range(9, 13), h, rng.randf_range(8, 11)), "", st)
+	# skyline atrás do distrito esportivo
+	var towers := [
+		[Vector3(-130, 0, -158), Vector3(16, 34, 14), Color(0.28, 0.34, 0.46)],
+		[Vector3(-78, 0, -162), Vector3(18, 46, 15), Color(0.42, 0.46, 0.52)],
+		[Vector3(-22, 0, -156), Vector3(14, 28, 12), Color(0.32, 0.30, 0.36)],
+		[Vector3(36, 0, -164), Vector3(20, 40, 16), Color(0.22, 0.28, 0.38)],
+		[Vector3(96, 0, -158), Vector3(15, 32, 13), Color(0.48, 0.42, 0.38)],
+		[Vector3(148, 0, -160), Vector3(17, 38, 14), Color(0.30, 0.36, 0.44)],
+	]
+	for tw in towers:
+		_building(tw[0], tw[2], tw[1], "", "office")
 
 func _door_pad(id: String) -> void:
 	var sp: Dictionary = SPOTS[id]
@@ -228,6 +251,16 @@ func _door_pad(id: String) -> void:
 	pad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	pad.position = Vector3(p.x, 0.14, p.z + s.z * 0.5 + 4.5)
 	add_child(pad)
+	var door := Label3D.new()
+	door.text = "ENTRAR"
+	door.font_size = 48
+	door.pixel_size = 0.012
+	door.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	door.no_depth_test = true
+	door.modulate = Color(0.7, 1.0, 0.85)
+	door.outline_size = 8
+	door.position = pad.position + Vector3(0, 1.8, 0)
+	add_child(door)
 
 func _building(pos: Vector3, color: Color, size: Vector3, label: String, style := "apartment") -> Node3D:
 	var root := StaticBody3D.new()
@@ -749,7 +782,9 @@ func _refresh_hud() -> void:
 	var me := ref_pos()
 	var district := G.district_at(me)
 	var place := district.to_upper()
-	if near_spot != "":
+	if interior and interior.active:
+		place = interior.place_title.to_upper()
+	elif near_spot != "":
 		place = SPOTS[near_spot].label.to_upper()
 	elif in_car:
 		place = "DIRIGINDO · " + district.to_upper()
@@ -757,14 +792,20 @@ func _refresh_hud() -> void:
 		var dist := int(Vector2(me.x - waypoint.x, me.z - waypoint.z).length())
 		place += "\nGPS: %s · %d m" % [waypoint_label, dist]
 	hud_place.text = place
-	var parts := ["WASD mover", "Shift correr"]
-	if g.has_car():
-		parts.append("F sair do carro" if in_car else "F entrar no carro")
-	if in_car:
-		parts.append("H buzina · R rádio · Espaço freio")
-	if near_spot != "":
-		parts.append("E entrar: %s" % SPOTS[near_spot].label)
-	parts.append("M mapa · J celular · Esc pausa")
+	var parts: Array = []
+	if interior and interior.active:
+		parts.append(interior.hint())
+		parts.append("Esc pausa")
+	else:
+		parts.append("WASD mover")
+		parts.append("Shift correr")
+		if g.has_car():
+			parts.append("F sair do carro" if in_car else "F entrar no carro")
+		if in_car:
+			parts.append("H buzina · R rádio · Espaço freio")
+		if near_spot != "":
+			parts.append("E entrar: %s" % SPOTS[near_spot].label)
+		parts.append("M mapa · J celular · Esc pausa")
 	hud_hint.text = " · ".join(parts)
 	car_card.visible = in_car
 	if in_car:
@@ -793,15 +834,19 @@ func _process(delta: float) -> void:
 		peds_sys.update(delta)
 		traffic.update(delta)
 		world.update_lights(traffic.t)
-		weather.update(delta, ref_pos())
+		var focus: Vector3 = interior.return_pos if interior and interior.active else ref_pos()
+		weather.update(delta, focus)
 		radio.update(delta)
 	_bump_cd = maxf(0.0, _bump_cd - delta)
 	_update_camera(delta)
 	_minimap_t += 1
 	if _minimap_t % 2 == 0:
-		if minimap and minimap.visible:
-			minimap.radius = map_radius
-			minimap.queue_redraw()
+		if minimap:
+			var show_map: bool = city.b("minimap") and not (interior and interior.active)
+			minimap.visible = show_map
+			if show_map:
+				minimap.radius = map_radius
+				minimap.queue_redraw()
 		if big_map and is_instance_valid(big_map):
 			big_map.queue_redraw()
 	_route_t -= delta
@@ -841,6 +886,11 @@ func _update_beacons() -> void:
 func _physics_process(delta: float) -> void:
 	if modal_open:
 		return
+	if interior and interior.active:
+		_walk(delta)
+		interior.tick()
+		_refresh_hud()
+		return
 	if in_car:
 		_drive(delta)
 	else:
@@ -862,8 +912,8 @@ func _physics_process(delta: float) -> void:
 			pass
 		elif near_spot != "":
 			if in_car:
-				car_speed = 0.0
-			_open_spot(near_spot)
+				_toggle_car()
+			interior.enter(near_spot)
 	elif Input.is_action_just_pressed("vehicle"):
 		_toggle_car()
 	_refresh_hud()
@@ -919,8 +969,9 @@ func _update_camera(delta: float) -> void:
 	var ref := ref_pos()
 	var ratio := 0.0
 	var fwd := Vector3.ZERO
-	var off := Vector3(0, 14, 14)
-	if in_car and car:
+	var indoor: bool = interior != null and interior.active
+	var off := Vector3(0, 8.6, 7.6) if indoor else Vector3(0, 14, 14)
+	if in_car and car and not indoor:
 		ratio = clampf(absf(car_speed) / 34.0, 0.0, 1.0)
 		fwd = -car.global_transform.basis.z * signf(car_speed if absf(car_speed) > 0.5 else 1.0)
 		off = Vector3(0, 17, 17)
@@ -928,10 +979,10 @@ func _update_camera(delta: float) -> void:
 	var target := ref + off * zoom + fwd * ratio * 6.0
 	var k := 1.0 - exp(-4.0 * delta)
 	camera.global_position = camera.global_position.lerp(target, k)
-	var look := ref + Vector3(0, 1.2, 0) + fwd * ratio * 8.0
+	var look := ref + Vector3(0, 0.9 if indoor else 1.2, 0) + fwd * ratio * 8.0
 	cam_focus = cam_focus.lerp(look, 1.0 - exp(-7.0 * delta))
 	camera.look_at(cam_focus)
-	camera.fov = lerpf(camera.fov, 52.0 + ratio * 14.0, k)
+	camera.fov = lerpf(camera.fov, (60.0 if indoor else 52.0) + ratio * 14.0, k)
 	if cam_shake > 0.001:
 		camera.h_offset = randf_range(-1.0, 1.0) * cam_shake
 		camera.v_offset = randf_range(-1.0, 1.0) * cam_shake
@@ -1059,6 +1110,13 @@ func _update_lighting() -> void:
 	var head_e := lerpf(3.0, 0.0, dim)
 	for sl in car_lights:
 		sl.light_energy = head_e
+	var glow := lerpf(1.25, 0.02, dim)
+	if interior and interior.active:
+		env.fog_density = 0.00012
+		env.ambient_light_energy = maxf(env.ambient_light_energy, 0.9)
+	elif absf(glow - _last_glow) > 0.06:
+		_last_glow = glow
+		Mats.set_window_glow(self, glow)
 
 # ---------------- PAINÉIS ----------------
 func _clear_overlay() -> void:

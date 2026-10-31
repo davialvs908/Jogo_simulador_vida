@@ -2,6 +2,8 @@ extends RefCounted
 ## Geometria da cidade: ruas, calçadas, faixas, semáforos, bairros (centro, praia, subúrbio, lojas).
 
 const G = preload("res://scripts/city_graph.gd")
+const Mats = preload("res://scripts/materials.gd")
+const Props = preload("res://scripts/props.gd")
 
 var hub
 var road_mat: StandardMaterial3D
@@ -66,12 +68,13 @@ func build() -> void:
 	_lights_and_lamps()
 	_beach()
 	_suburb_and_decor()
+	_street_life()
 	_gas_station()
 	_labels()
 
 # ---------------- terreno ----------------
 func _ground() -> void:
-	_plane(Vector3.ZERO, Vector2(460, 460), _m(Color(0.16, 0.20, 0.17), 0.95))
+	_plane(Vector3.ZERO, Vector2(460, 460), Mats.grass(Color(0.82, 0.95, 0.78)))
 	var fb := StaticBody3D.new()
 	var fc := CollisionShape3D.new()
 	var fs := BoxShape3D.new()
@@ -93,7 +96,7 @@ func _ground() -> void:
 	hub.add_child(walls)
 
 func _roads() -> void:
-	road_mat = _m(Color(0.10, 0.11, 0.13), 0.9)
+	road_mat = Mats.asphalt(0.45)
 	for x in G.XS:
 		_plane(Vector3(x, 0.02, 0), Vector2(8, 228), road_mat)
 	for z in G.ZS:
@@ -154,10 +157,10 @@ func _near_line(v: float, lines: Array, d: float) -> bool:
 
 # ---------------- quarteirões / calçadas ----------------
 func _blocks() -> void:
-	var walk_mat := _m(Color(0.38, 0.38, 0.40), 0.95)
-	var shop_walk := _m(Color(0.44, 0.40, 0.36), 0.95)
-	var lawn := _m(Color(0.17, 0.40, 0.20), 0.95)
-	var lawn2 := _m(Color(0.20, 0.44, 0.22), 0.95)
+	var walk_mat := Mats.pavement(0.55)
+	var shop_walk := Mats.pavement(0.42)
+	var lawn := Mats.grass(Color(0.9, 1.0, 0.85))
+	var lawn2 := Mats.grass(Color(1.05, 1.0, 0.8))
 	for i in G.NX - 1:
 		for j in G.NZ - 1:
 			var x0: float = G.XS[i] + 4.0
@@ -302,7 +305,7 @@ func update_lights(t: float) -> void:
 
 # ---------------- praia ----------------
 func _beach() -> void:
-	_plane(Vector3(0, 0.01, 139.5), Vector2(460, 51), _m(Color(0.84, 0.76, 0.55), 0.98))
+	_plane(Vector3(0, 0.01, 139.5), Vector2(460, 51), Mats.sand(0.5))
 	var sea_mat := _m(Color(0.08, 0.30, 0.50), 0.12, 0.25)
 	sea_mat.emission_enabled = true
 	sea_mat.emission = Color(0.04, 0.16, 0.30)
@@ -354,8 +357,8 @@ func _beach() -> void:
 	crown.height = 1.8
 	crown.radial_segments = 8
 	crown.rings = 4
-	var trunk_m := _m(Color(0.45, 0.32, 0.2), 0.9)
-	var crown_m := _m(Color(0.15, 0.5, 0.2), 0.9)
+	var trunk_m := Mats.bark(Color(0.85, 0.7, 0.5))
+	var crown_m := Mats.leaves(Color(0.35, 0.62, 0.28))
 	var xt: Array = []
 	var xc: Array = []
 	for k in 16:
@@ -398,8 +401,8 @@ func _suburb_and_decor() -> void:
 	crown.height = 3.2
 	crown.radial_segments = 8
 	crown.rings = 4
-	var trunk_m := _m(Color(0.35, 0.24, 0.15), 0.9)
-	var crown_m := _m(Color(0.17, 0.42, 0.20), 0.9)
+	var trunk_m := Mats.bark()
+	var crown_m := Mats.leaves(Color(0.42, 0.72, 0.32))
 	var xt: Array = []
 	var xc: Array = []
 	for i in G.NX - 1:
@@ -422,7 +425,7 @@ func _suburb_and_decor() -> void:
 						xt.append(Transform3D(Basis.IDENTITY, Vector3(hp.x + sx * 7.0, 1.2, hp.z + sz * 5.0 + 0.5)))
 						xc.append(Transform3D(Basis.IDENTITY, Vector3(hp.x + sx * 7.0, 3.6, hp.z + sz * 5.0 + 0.5)))
 			elif i == 1 and j == 0:
-				# parque com fonte
+				# parque com fonte e árvores de verdade
 				var fm := _m(Color(0.3, 0.55, 0.75), 0.15, 0.2)
 				fm.emission_enabled = true
 				fm.emission = Color(0.1, 0.3, 0.5)
@@ -435,11 +438,23 @@ func _suburb_and_decor() -> void:
 				fi.material_override = fm
 				fi.position = Vector3(cx, 0.3, cz)
 				hub.add_child(fi)
-				for k in 10:
-					var ang := TAU * float(k) / 10.0
-					xt.append(Transform3D(Basis.IDENTITY, Vector3(cx + cos(ang) * 14.0, 1.2, cz + sin(ang) * 14.0)))
-					xc.append(Transform3D(Basis.IDENTITY, Vector3(cx + cos(ang) * 14.0, 3.6, cz + sin(ang) * 14.0)))
+				for k in 8:
+					var ang := TAU * float(k) / 8.0
+					var tree := Props.make_tree(["oak", "round", "pine", "oak"][k % 4])
+					tree.position = Vector3(cx + cos(ang) * 13.5, 0.0, cz + sin(ang) * 13.5)
+					hub.add_child(tree)
+					if k % 2 == 0:
+						var bush := Props.make_bush()
+						bush.position = Vector3(cx + cos(ang + 0.4) * 8.0, 0.0, cz + sin(ang + 0.4) * 8.0)
+						hub.add_child(bush)
+			elif i == 1 and _clear_lot(Vector3(cx, 0, cz)):
+				hub._building(Vector3(cx, 0, cz), house_cols[j % house_cols.size()], Vector3(11.0, 4.4, 9.0), "", "house")
 			else:
+				if i >= 2 and _clear_lot(Vector3(cx, 0, cz)):
+					var bh := 8.0 + float((i * 3 + j * 5) % 5) * 4.0
+					var bcol := Color(0.62, 0.64, 0.68).lerp(Color(0.32, 0.38, 0.5), clampf(float(i) / 5.0, 0.0, 1.0))
+					var bstyle := "office" if i >= 4 or bh > 18.0 else "apartment"
+					hub._building(Vector3(cx, 0, cz), bcol, Vector3(14.0, bh, 12.0), "", bstyle)
 				for sx in [-1.0, 1.0]:
 					for sz in [-1.0, 1.0]:
 						var tx: float = cx + sx * 18.5
@@ -448,6 +463,47 @@ func _suburb_and_decor() -> void:
 						xc.append(Transform3D(Basis.IDENTITY, Vector3(tx, 3.6, tz)))
 	_multi(trunk, trunk_m, xt, true)
 	_multi(crown, crown_m, xc, true)
+
+func _clear_lot(p: Vector3) -> bool:
+	for id in hub.SPOTS.keys():
+		var sp: Vector3 = hub.SPOTS[id].pos
+		if Vector2(p.x - sp.x, p.z - sp.z).length() < 20.0:
+			return false
+	for f in hub.FILLERS:
+		var fp: Vector3 = f
+		if Vector2(p.x - fp.x, p.z - fp.z).length() < 16.0:
+			return false
+	return true
+
+func _street_life() -> void:
+	var bin_m := Mats.metal(Color(0.16, 0.4, 0.26), 0.55)
+	var roof_m := Mats.metal(Color(0.78, 0.8, 0.84), 0.32)
+	var pole_m := Mats.metal(Color(0.32, 0.34, 0.38), 0.45)
+	var bench_m := Mats.wood(Color(0.48, 0.32, 0.18))
+	for id in range(0, G.count(), 4):
+		var p := G.node_pos(id)
+		_box(p + Vector3(7.4, 0.45, 7.4), Vector3(0.55, 0.9, 0.55), bin_m)
+	for sx in [-78.0, 22.0, 108.0]:
+		var base := Vector3(sx, 0, 7.6)
+		_box(base + Vector3(0, 2.55, 0), Vector3(3.4, 0.1, 1.5), roof_m)
+		_box(base + Vector3(-1.45, 1.25, -0.55), Vector3(0.1, 2.5, 0.1), pole_m)
+		_box(base + Vector3(1.45, 1.25, -0.55), Vector3(0.1, 2.5, 0.1), pole_m)
+		_box(base + Vector3(0, 0.48, 0.15), Vector3(1.7, 0.1, 0.42), bench_m)
+		var sign := Label3D.new()
+		sign.text = "ÔNIBUS"
+		sign.font_size = 40
+		sign.pixel_size = 0.01
+		sign.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		sign.modulate = Color(0.9, 0.95, 1.0)
+		sign.position = base + Vector3(0, 3.05, 0)
+		hub.add_child(sign)
+	var paints := [Color(0.8, 0.1, 0.12), Color(0.1, 0.22, 0.55), Color(0.92, 0.92, 0.9), Color(0.12, 0.12, 0.14), Color(0.18, 0.46, 0.3), Color(0.72, 0.55, 0.12)]
+	var parks := [Vector3(-96, 0, 7.8), Vector3(-36, 0, -7.8), Vector3(46, 0, 7.8), Vector3(132, 0, -7.8), Vector3(-140, 0, 7.8), Vector3(70, 0, 62)]
+	for i in parks.size():
+		var car := Props.make_car(paints[i])
+		car.position = parks[i]
+		car.rotation.y = PI * 0.5 if parks[i].z > 0.0 else -PI * 0.5
+		hub.add_child(car)
 
 func _gas_station() -> void:
 	var sp: Dictionary = hub.SPOTS["gas"]

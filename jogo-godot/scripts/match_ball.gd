@@ -19,8 +19,12 @@ func _init() -> void:
 	sph.height = C.BALL_R * 2.0
 	mi.mesh = sph
 	var bm := StandardMaterial3D.new()
-	bm.albedo_color = Color(0.95, 0.95, 0.95)
-	bm.roughness = 0.5
+	bm.albedo_color = Color(0.96, 0.96, 0.97)
+	bm.roughness = 0.28
+	bm.metallic = 0.12
+	bm.clearcoat_enabled = true
+	bm.clearcoat = 0.7
+	bm.clearcoat_roughness = 0.12
 	mi.material_override = bm
 	_pivot.add_child(mi)
 	var dark := StandardMaterial3D.new()

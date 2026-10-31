@@ -74,7 +74,7 @@ var finished_called := false
 var autoplay := false   # depuração/demonstração: a IA também controla o seu jogador
 
 var cam_focus := Vector3.ZERO
-var cam_fov := 42.0
+var cam_fov := 32.0
 
 # ================================================================= setup
 func _ready() -> void:
@@ -114,69 +114,171 @@ func _physics_process(delta: float) -> void:
 # ================================================================= mundo
 func _build_world() -> void:
 	var Mats := preload("res://scripts/materials.gd")
-	var env := WorldEnvironment.new()
-	env.environment = Mats.make_env(0.22)   # crepúsculo, com os holofotes do estádio
-	add_child(env)
-	add_child(Mats.make_sun(0.22))
+	var envn := WorldEnvironment.new()
+	var env := Mats.make_env(0.05)
+	env.ambient_light_energy = 0.58
+	env.tonemap_exposure = 1.08
+	env.glow_intensity = 0.75
+	env.glow_bloom = 0.07
+	env.fog_density = 0.00035
+	envn.environment = env
+	add_child(envn)
+	var sun := Mats.make_sun(0.05)
+	sun.shadow_enabled = false
+	sun.light_energy = 0.12
+	add_child(sun)
+
+	var apron := MeshInstance3D.new()
+	var ap := PlaneMesh.new()
+	ap.size = Vector2(170, 210)
+	apron.mesh = ap
+	apron.material_override = Mats.shared(Color(0.045, 0.11, 0.06), 0.97)
+	apron.position = Vector3(0, -0.03, 0)
+	add_child(apron)
 
 	var pitch := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
-	plane.size = Vector2(PITCH_W + 10.0, PITCH_D + 10.0)
+	plane.size = Vector2(PITCH_W + 1.4, PITCH_D + 1.4)
 	pitch.mesh = plane
-	var grass := StandardMaterial3D.new()
-	grass.albedo_color = Color(0.16, 0.38, 0.22)
-	grass.roughness = 0.95
-	pitch.material_override = grass
+	pitch.material_override = Mats.pitch_grass()
+	pitch.position = Vector3(0, 0.02, 0)
 	add_child(pitch)
-	for i in range(-6, 7):
-		if i % 2 == 0:
-			continue
-		var stripe := MeshInstance3D.new()
-		var sp := PlaneMesh.new()
-		sp.size = Vector2(PITCH_W, PITCH_D / 13.0)
-		stripe.mesh = sp
-		var sm := StandardMaterial3D.new()
-		sm.albedo_color = Color(0.21, 0.47, 0.27)
-		stripe.material_override = sm
-		stripe.position = Vector3(0, 0.01, i * PITCH_D / 13.0)
-		add_child(stripe)
 	_build_lines()
+	_mark(Vector3(0, 0, 0), 0.22)
+	for s in [-1.0, 1.0]:
+		_mark(Vector3(0, 0, s * (HALF_D - 11.0)), 0.15)
 
 	_make_goal(Vector3(0, 0, -HALF_D), -1.0)
 	_make_goal(Vector3(0, 0, HALF_D), 1.0)
-	for p in [Vector3(-HALF_W - 4, 0, -HALF_D - 2), Vector3(HALF_W + 4, 0, -HALF_D - 2), Vector3(-HALF_W - 4, 0, HALF_D + 2), Vector3(HALF_W + 4, 0, HALF_D + 2)]:
+	_build_stadium()
+	for p in [Vector3(-HALF_W - 6, 0, -HALF_D - 4), Vector3(HALF_W + 8, 0, -HALF_D - 4), Vector3(-HALF_W - 6, 0, HALF_D + 4), Vector3(HALF_W + 8, 0, HALF_D + 4)]:
 		_make_flood(p)
-	for z in [-HALF_D - 5.0, HALF_D + 5.0]:
-		var stand := MeshInstance3D.new()
-		var bm := BoxMesh.new()
-		bm.size = Vector3(PITCH_W + 8, 4, 4)
-		stand.mesh = bm
-		var mat := StandardMaterial3D.new()
-		mat.albedo_color = Color(0.18, 0.22, 0.3)
-		stand.material_override = mat
-		stand.position = Vector3(0, 2, z)
-		add_child(stand)
-	# bandeirinhas de escanteio
+
+	camera = Camera3D.new()
+	camera.fov = cam_fov
+	camera.position = Vector3(-38.0, 14.8, 0)
+	camera.current = true
+	add_child(camera)
+	camera.look_at(Vector3(1.5, 0.55, 0), Vector3.UP)
+
+func _solid(pos: Vector3, size: Vector3, mat: Material) -> void:
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = size
+	mi.mesh = bm
+	mi.material_override = mat
+	mi.position = pos
+	add_child(mi)
+
+func _mark(pos: Vector3, radius: float) -> void:
+	var mi := MeshInstance3D.new()
+	var cy := CylinderMesh.new()
+	cy.top_radius = radius
+	cy.bottom_radius = radius
+	cy.height = 0.02
+	mi.mesh = cy
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.95, 0.97, 0.95)
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mi.material_override = m
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.position = pos + Vector3(0, 0.04, 0)
+	add_child(mi)
+
+func _net_plane(pos: Vector3, size: Vector3, mat: Material) -> void:
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = size
+	mi.mesh = bm
+	mi.material_override = mat
+	mi.position = pos
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
+
+func _build_stadium() -> void:
+	var Mats := preload("res://scripts/materials.gd")
+	var concrete := Mats.concrete(Color(0.42, 0.46, 0.52))
+	var seat := Mats.shared(Color(0.10, 0.22, 0.42), 0.8)
+	var roof_m := Mats.metal(Color(0.75, 0.78, 0.82), 0.35)
+	var dark := Mats.shared(Color(0.08, 0.09, 0.11), 0.6)
+	# arquibancada do lado oposto à câmera (a que a transmissão mostra)
+	_solid(Vector3(HALF_W + 10.0, 2.2, 0), Vector3(8.0, 4.4, PITCH_D + 6.0), concrete)
+	_solid(Vector3(HALF_W + 16.5, 6.2, 0), Vector3(7.0, 5.2, PITCH_D + 10.0), seat)
+	_solid(Vector3(HALF_W + 18.0, 11.2, 0), Vector3(14.0, 0.35, PITCH_D + 16.0), roof_m)
+	_solid(Vector3(HALF_W + 12.0, 9.4, 0), Vector3(0.4, 0.8, PITCH_D + 8.0), dark)
+	_crowd(Vector3(HALF_W + 8.5, 2.4, 0), Vector3(0, 0, 1.15), Vector3(0.55, 0.55, 0), 60, 8)
+	_crowd(Vector3(HALF_W + 14.2, 4.6, 0), Vector3(0, 0, 1.15), Vector3(0.5, 0.5, 0), 62, 8)
+	# fundos (atrás dos gols)
+	for s in [-1.0, 1.0]:
+		var z: float = s * (HALF_D + 8.5)
+		_solid(Vector3(0, 2.4, z), Vector3(PITCH_W + 16.0, 4.8, 7.0), concrete)
+		_solid(Vector3(0, 6.6, z + s * 4.5), Vector3(PITCH_W + 20.0, 4.2, 6.0), seat)
+		_crowd(Vector3(0, 1.8, z - s * 1.2), Vector3(1.15, 0, 0), Vector3(0, 0.5, s * 0.45), 40, 7)
+	# placas de publicidade em volta do campo
+	var ads := [Color(0.08, 0.38, 0.78), Color(0.82, 0.12, 0.14), Color(0.95, 0.78, 0.12), Color(0.1, 0.55, 0.38), Color(0.12, 0.12, 0.14), Color(0.93, 0.93, 0.95), Color(0.45, 0.18, 0.62)]
+	var step := 3.4
+	var i := 0
+	var z0 := -HALF_D + 1.0
+	while z0 < HALF_D - 1.0:
+		for sx in [-1.0, 1.0]:
+			_board(Vector3(sx * (HALF_W + 1.7), 0.55, z0), Vector3(0.14, 1.05, step * 0.9), ads[i % ads.size()])
+			i += 1
+		z0 += step
+	var x0 := -HALF_W + 2.0
+	while x0 < HALF_W - 2.0:
+		if absf(x0) > C.GOAL_HALF + 1.2:
+			for sz in [-1.0, 1.0]:
+				_board(Vector3(x0, 0.55, sz * (HALF_D + 1.7)), Vector3(step * 0.9, 1.05, 0.14), ads[i % ads.size()])
+				i += 1
+		x0 += step
+	# banco de reservas do lado da câmera
+	for bz in [-10.0, 8.0]:
+		_solid(Vector3(-HALF_W - 2.4, 0.45, bz), Vector3(1.4, 0.5, 4.2), dark)
+		_solid(Vector3(-HALF_W - 2.4, 1.5, bz - 1.8), Vector3(0.9, 1.6, 0.15), Mats.glass(0.35))
 	for cx in [-HALF_W, HALF_W]:
 		for cz in [-HALF_D, HALF_D]:
 			var flag := MeshInstance3D.new()
 			var fc := CylinderMesh.new()
 			fc.top_radius = 0.03
 			fc.bottom_radius = 0.03
-			fc.height = 1.5
+			fc.height = 1.6
 			flag.mesh = fc
-			var fm := StandardMaterial3D.new()
-			fm.albedo_color = Color(1.0, 0.85, 0.2)
-			flag.material_override = fm
-			flag.position = Vector3(cx, 0.75, cz)
+			flag.material_override = Mats.emissive(Color(1.0, 0.85, 0.15), 0.4)
+			flag.position = Vector3(cx, 0.8, cz)
 			add_child(flag)
 
-	camera = Camera3D.new()
-	camera.fov = cam_fov
-	camera.position = Vector3(-31, 15.5, 0)
-	camera.current = true
-	add_child(camera)
-	camera.look_at(Vector3(0, 0.5, 0))
+func _board(pos: Vector3, size: Vector3, col: Color) -> void:
+	var Mats := preload("res://scripts/materials.gd")
+	_solid(pos, size, Mats.shared(col, 0.4))
+	var lip := Vector3(size.x, 0.06, size.z)
+	_solid(pos + Vector3(0, size.y * 0.5, 0), lip, Mats.emissive(col.lightened(0.35), 0.9))
+
+func _crowd(origin: Vector3, along: Vector3, lift: Vector3, n_along: int, n_rows: int) -> void:
+	var mesh := BoxMesh.new()
+	mesh.size = Vector3(0.34, 0.46, 0.3)
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.mesh = mesh
+	mm.instance_count = n_along * n_rows
+	var palette := [Color(0.12, 0.32, 0.72), Color(0.78, 0.14, 0.16), Color(0.92, 0.82, 0.2), Color(0.08, 0.08, 0.1), Color(0.94, 0.94, 0.96), Color(0.15, 0.5, 0.32), Color(0.55, 0.2, 0.6)]
+	var rr := RandomNumberGenerator.new()
+	rr.seed = n_along * 17 + n_rows * 3 + int(origin.x + origin.z)
+	var i := 0
+	for r in n_rows:
+		for c in n_along:
+			var p := origin + along * (float(c) - float(n_along) * 0.5) + lift * float(r)
+			mm.set_instance_transform(i, Transform3D(Basis.IDENTITY, p))
+			mm.set_instance_color(i, palette[rr.randi() % palette.size()])
+			i += 1
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	var mat := StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.roughness = 0.82
+	mmi.material_override = mat
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mmi)
 
 func _line(a: Vector3, b: Vector3) -> void:
 	var mi := MeshInstance3D.new()
@@ -240,42 +342,40 @@ func _make_goal(at: Vector3, s: float) -> void:
 	cross.rotation_degrees = Vector3(0, 0, 90)
 	cross.position = at + Vector3(0, C.GOAL_H, 0)
 	add_child(cross)
-	# rede (caixa translúcida)
-	var net := MeshInstance3D.new()
-	var nb := BoxMesh.new()
-	nb.size = Vector3(C.GOAL_HALF * 2.0, C.GOAL_H, 2.4)
-	net.mesh = nb
-	var nm := StandardMaterial3D.new()
-	nm.albedo_color = Color(1, 1, 1, 0.12)
-	nm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	nm.cull_mode = BaseMaterial3D.CULL_DISABLED
-	net.material_override = nm
-	net.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	net.position = at + Vector3(0, C.GOAL_H * 0.5, s * 1.2)
-	add_child(net)
+	var Mats := preload("res://scripts/materials.gd")
+	var net_m := Mats.goal_net()
+	var gw := C.GOAL_HALF * 2.0
+	_net_plane(at + Vector3(0, C.GOAL_H * 0.5, s * 2.15), Vector3(gw, C.GOAL_H, 0.02), net_m)
+	_net_plane(at + Vector3(-C.GOAL_HALF, C.GOAL_H * 0.5, s * 1.05), Vector3(0.02, C.GOAL_H, 2.1), net_m)
+	_net_plane(at + Vector3(C.GOAL_HALF, C.GOAL_H * 0.5, s * 1.05), Vector3(0.02, C.GOAL_H, 2.1), net_m)
+	_net_plane(at + Vector3(0, C.GOAL_H, s * 1.05), Vector3(gw, 0.02, 2.1), net_m)
 
 func _make_flood(at: Vector3) -> void:
+	var Mats := preload("res://scripts/materials.gd")
 	var pole := MeshInstance3D.new()
 	var c := CylinderMesh.new()
-	c.top_radius = 0.18
-	c.bottom_radius = 0.25
-	c.height = 16
+	c.top_radius = 0.16
+	c.bottom_radius = 0.28
+	c.height = 18
 	pole.mesh = c
-	var pm := StandardMaterial3D.new()
-	pm.albedo_color = Color(0.55, 0.58, 0.62)
-	pm.metallic = 0.7
-	pole.material_override = pm
-	pole.position = at + Vector3(0, 8, 0)
+	pole.material_override = Mats.metal(Color(0.62, 0.64, 0.68), 0.4)
+	pole.position = at + Vector3(0, 9, 0)
 	add_child(pole)
+	var bank := Mats.metal(Color(0.2, 0.22, 0.24), 0.45)
+	var lamp := Mats.emissive(Color(1.0, 0.95, 0.82), 3.0)
+	_solid(at + Vector3(0, 18.2, 0), Vector3(3.4, 0.35, 1.3), bank)
+	for ix in 4:
+		for iz in 2:
+			_solid(at + Vector3(-1.2 + float(ix) * 0.8, 17.85, -0.3 + float(iz) * 0.6), Vector3(0.45, 0.22, 0.35), lamp)
 	var light := SpotLight3D.new()
-	light.light_color = Color(1.0, 0.95, 0.85)
-	light.light_energy = 4.5
-	light.spot_range = 90
-	light.spot_angle = 48
-	light.shadow_enabled = true
-	light.position = at + Vector3(0, 16, 0)
+	light.light_color = Color(1.0, 0.96, 0.88)
+	light.light_energy = 10.0
+	light.spot_range = 110
+	light.spot_angle = 52
+	light.shadow_enabled = at.x < 0.0
+	light.position = at + Vector3(0, 17.6, 0)
 	add_child(light)
-	light.look_at(Vector3(0, 0, at.z * 0.1), Vector3.UP)
+	light.look_at(Vector3(0, 0, at.z * 0.15), Vector3.UP)
 
 func _spawn_ball() -> void:
 	ball = BallScript.new()
@@ -1311,18 +1411,19 @@ func _update_camera(dt: float) -> void:
 	var spread := 0.0
 	if u != null:
 		spread = absf(ball.position.z - u.position.z)
-	var target_fov := 38.0 + clampf(spread * 0.3, 0.0, 9.0)
+	var target_fov := 28.0 + clampf(spread * 0.18, 0.0, 6.0)
 	if absf(ball.position.z) > HALF_D - 16.0:
-		target_fov -= 3.0
+		target_fov -= 2.0
 	if state == C.State.GOAL:
-		target_fov = 30.0
+		target_fov = 24.0
 	cam_fov = lerpf(cam_fov, target_fov, 1.0 - exp(-dt * 2.5))
 	camera.fov = cam_fov
-	var cpos := Vector3(-31.0, 15.5, cam_focus.z + 3.0)
+	var cpos := Vector3(-38.0, 14.8, cam_focus.z * 0.86 + 1.2)
 	if state == C.State.REPLAY:
-		cpos = Vector3(27.0, 8.0, ball.position.z + 2.0)
+		cpos = Vector3(20.0, 6.2, ball.position.z + 5.0)
 	camera.position = camera.position.lerp(cpos, 1.0 - exp(-dt * 3.0))
-	camera.look_at(Vector3(0.0, 0.5, cam_focus.z) if state != C.State.REPLAY else ball.position, Vector3.UP)
+	var look: Vector3 = Vector3(1.4, 0.5, cam_focus.z) if state != C.State.REPLAY else ball.position
+	camera.look_at(look, Vector3.UP)
 
 # ================================================================= fim de jogo
 func _finish(forfeit: bool) -> void:

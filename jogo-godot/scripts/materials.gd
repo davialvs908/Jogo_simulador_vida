@@ -133,6 +133,64 @@ static func pavement(uv_per_m := 0.5) -> StandardMaterial3D:
 		_tex_cache[key] = tex
 	return _tex_mat(tex, noise_normal("pave", 32, 0.15, 1.5), Color.WHITE, 0.9, Vector3(uv_per_m, uv_per_m, uv_per_m))
 
+static func sand(uv_per_m := 0.4) -> StandardMaterial3D:
+	var a := noise_albedo("sand", Color(0.72, 0.62, 0.40), Color(0.93, 0.84, 0.62), 77, 0.07, 128)
+	return _tex_mat(a, noise_normal("sand", 78, 0.18, 1.3), Color.WHITE, 0.96, Vector3(uv_per_m, uv_per_m, uv_per_m), 0.5)
+
+## Gramado de jogo com faixas de corte (estilo transmissão). Uma textura, sem planos empilhados.
+static func pitch_grass() -> StandardMaterial3D:
+	if _mat_cache.has("pitch"):
+		return _mat_cache["pitch"]
+	var w := 256
+	var h := 512
+	var stripes := 16
+	var src := _noise_image(w, h, 9, 0.11, 3)
+	var img := Image.create(w, h, true, Image.FORMAT_RGB8)
+	var dark_g := Color(0.07, 0.32, 0.13)
+	var light_g := Color(0.14, 0.48, 0.20)
+	for y in h:
+		var band := int(float(y) / float(h) * float(stripes)) % 2
+		var base: Color = dark_g if band == 0 else light_g
+		for x in w:
+			var n: float = src.get_pixel(x, y).r
+			var c := base.lerp(base.lightened(0.16), n)
+			if x % 5 == 0:
+				c = c.darkened(0.05)
+			var mid := absf(float(x) / float(w) - 0.5)
+			if mid < 0.045:
+				c = c.lightened(0.06)
+			img.set_pixel(x, y, c)
+	img.generate_mipmaps()
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = ImageTexture.create_from_image(img)
+	m.roughness = 0.9
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	_mat_cache["pitch"] = m
+	return m
+
+## Malha da rede do gol.
+static func goal_net() -> StandardMaterial3D:
+	if _mat_cache.has("net"):
+		return _mat_cache["net"]
+	var s := 64
+	var img := Image.create(s, s, true, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	for y in s:
+		for x in s:
+			if x % 8 == 0 or y % 8 == 0:
+				img.set_pixel(x, y, Color(0.92, 0.94, 0.96, 0.82))
+	img.generate_mipmaps()
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = ImageTexture.create_from_image(img)
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.uv1_triplanar = true
+	m.uv1_scale = Vector3(5.0, 3.2, 5.0)
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	_mat_cache["net"] = m
+	return m
+
 static func grass(tint := Color.WHITE, uv_per_m := 0.35) -> StandardMaterial3D:
 	var a := noise_albedo("grass", Color(0.12, 0.30, 0.10), Color(0.26, 0.48, 0.16), 41, 0.09, 128)
 	return _tex_mat(a, noise_normal("grass", 42, 0.3, 2.0), tint, 0.95, Vector3(uv_per_m, uv_per_m, uv_per_m))

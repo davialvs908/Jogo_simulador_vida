@@ -37,29 +37,47 @@ func _label(text: String, size: int, col := Color.WHITE) -> Label:
 
 func build(m) -> void:
 	layer = 5
-	# placar
-	var panel := PanelContainer.new()
-	panel.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	panel.offset_top = 10
-	panel.add_theme_stylebox_override("panel", _style(Color(0.04, 0.06, 0.1, 0.88)))
-	add_child(panel)
-	var v := VBoxContainer.new()
-	v.alignment = BoxContainer.ALIGNMENT_CENTER
-	panel.add_child(v)
-	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 14)
-	v.add_child(row)
-	home_lbl = _label(GameState.club_name, 18, Color(0.55, 0.75, 1.0))
-	score_lbl = _label("0 – 0", 26)
-	away_lbl = _label(GameState.opponent_name(), 18, Color(1.0, 0.55, 0.5))
-	row.add_child(home_lbl)
-	row.add_child(score_lbl)
-	row.add_child(away_lbl)
-	clock_lbl = _label("0' · 1º TEMPO", 14, Color(0.8, 0.85, 0.9))
+	# placar no estilo transmissão
+	var scorebar := HBoxContainer.new()
+	scorebar.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	scorebar.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	scorebar.offset_top = 14
+	scorebar.alignment = BoxContainer.ALIGNMENT_CENTER
+	scorebar.add_theme_constant_override("separation", 0)
+	add_child(scorebar)
+	var home_box := PanelContainer.new()
+	home_box.custom_minimum_size = Vector2(210, 54)
+	home_box.add_theme_stylebox_override("panel", _style(Color(0.07, 0.24, 0.58, 0.94), 0, 8))
+	scorebar.add_child(home_box)
+	home_lbl = _label(GameState.club_name, 18, Color(0.92, 0.95, 1.0))
+	home_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	home_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	home_lbl.clip_text = true
+	home_lbl.custom_minimum_size = Vector2(190, 36)
+	home_box.add_child(home_lbl)
+	var mid := PanelContainer.new()
+	mid.custom_minimum_size = Vector2(128, 54)
+	mid.add_theme_stylebox_override("panel", _style(Color(0.02, 0.02, 0.03, 0.94), 0, 6))
+	scorebar.add_child(mid)
+	var mv := VBoxContainer.new()
+	mv.alignment = BoxContainer.ALIGNMENT_CENTER
+	mid.add_child(mv)
+	score_lbl = _label("0 – 0", 28)
+	score_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	mv.add_child(score_lbl)
+	clock_lbl = _label("0' · 1º TEMPO", 13, Color(0.78, 0.84, 0.9))
 	clock_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	v.add_child(clock_lbl)
+	mv.add_child(clock_lbl)
+	var away_box := PanelContainer.new()
+	away_box.custom_minimum_size = Vector2(210, 54)
+	away_box.add_theme_stylebox_override("panel", _style(Color(0.58, 0.1, 0.12, 0.94), 0, 8))
+	scorebar.add_child(away_box)
+	away_lbl = _label(GameState.opponent_name(), 18, Color(1.0, 0.93, 0.93))
+	away_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	away_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	away_lbl.clip_text = true
+	away_lbl.custom_minimum_size = Vector2(190, 36)
+	away_box.add_child(away_lbl)
 	# faixas do replay
 	replay_box = Control.new()
 	replay_box.set_anchors_preset(Control.PRESET_FULL_RECT)
