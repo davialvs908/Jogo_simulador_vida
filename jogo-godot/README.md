@@ -12,6 +12,14 @@ IA por função, goleiro com mergulho, faltas, cartões, escanteio, lateral, pê
 Trânsito com semáforos, pedestres, chuva/neblina, minimapa e GPS, missões, 7+ locais.
 E interagir · F entrar/sair do carro · Esc menu. Casa → "Carreira, contrato e finanças".
 
+## Movimento
+A pé: aceleração e virada suaves. Carro: Espaço = freio; Espaço + virar em alta velocidade = derrapagem
+(deslize lateral, carroceria inclina, rodas giram e esterçam).
+
+## Procurado (polícia, sem violência)
+Excesso de velocidade perto de viatura e batidas somam estrelas (até 5). Mais estrelas = mais viaturas, mais rápidas, que perseguem você.
+Parado perto de uma viatura por ~2,5 s = abordagem (multa de $120 por estrela). Fora da vista por alguns segundos = estrelas caem.
+
 ## Carreira
 12 ligas fictícias (8 clubes cada), campeonato + copa, elenco, contrato, propostas e transferências entre ligas,
 patrocínios, investimentos, imprensa, lesões, Maya (namoro, moradia, casamento, filho), aposentadoria.

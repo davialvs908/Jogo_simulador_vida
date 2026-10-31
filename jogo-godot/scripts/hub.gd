@@ -11,6 +11,7 @@ const CityMissions = preload("res://scripts/city_missions.gd")
 const CityWeather = preload("res://scripts/city_weather.gd")
 const CityRadio = preload("res://scripts/city_radio.gd")
 const CityPanels = preload("res://scripts/city_panels.gd")
+const CityWanted = preload("res://scripts/city_wanted.gd")
 const Props = preload("res://scripts/props.gd")
 const Mats = preload("res://scripts/materials.gd")
 const CityInterior = preload("res://scripts/city_interior.gd")
@@ -91,6 +92,10 @@ var car_lights: Array = []
 var car_label: Label3D
 var in_car := false
 var car_speed := 0.0
+var car_slip := 0.0
+var _car_roll := 0.0
+var _car_pitch := 0.0
+var _prev_car_speed := 0.0
 var lock_drive := false
 
 var home_node: Node3D
@@ -101,6 +106,7 @@ var lamps: Array = []
 var city
 var world
 var traffic
+var wanted
 var peds_sys
 var missions
 var weather
@@ -148,6 +154,8 @@ func _ready() -> void:
 	weather.set_mode(city.s("weather_mode"))
 	traffic.setup(self)
 	traffic.set_police(city.b("police_enabled"))
+	wanted = CityWanted.new()
+	wanted.setup(self)
 	radio = CityRadio.new()
 	radio.set_index(city.i("radio"))
 	missions = CityMissions.new()
@@ -833,6 +841,7 @@ func _process(delta: float) -> void:
 	if not pause_world:
 		peds_sys.update(delta)
 		traffic.update(delta)
+		wanted.update(delta)
 		world.update_lights(traffic.t)
 		var focus: Vector3 = interior.return_pos if interior and interior.active else ref_pos()
 		weather.update(delta, focus)
@@ -1000,10 +1009,12 @@ func _walk(_delta: float) -> void:
 		spd = SPRINT_SPEED * (1.0 + 0.02 * float(city.i("fitness")) + (0.08 if city.has_item("fone") else 0.0))
 	if GameState.energy < 10.0:
 		spd *= 0.6
-	player.velocity = dir * spd
+	var moving := dir.length() > 0.1
+	player.velocity = player.velocity.move_toward(dir * spd, (48.0 if moving else 70.0) * _delta)
 	player.move_and_slide()
-	if dir.length() > 0.1:
-		player.look_at(player.global_position + Vector3(dir.x, 0, dir.z), Vector3.UP)
+	if moving:
+		var want_yaw := atan2(-dir.x, -dir.z)
+		player.rotation.y = lerp_angle(player.rotation.y, want_yaw, minf(1.0, _delta * 14.0))
 	Props.update_walk(player.get_child(0), player.velocity.length(), _delta)
 
 func _drive(delta: float) -> void:
@@ -1023,14 +1034,33 @@ func _drive(delta: float) -> void:
 		car_speed = move_toward(car_speed, -vmax * 0.35, 26.0 * delta)
 	else:
 		car_speed = move_toward(car_speed, 0.0, 9.0 * delta)
-	if Input.is_action_pressed("city_brake") or lock_drive:
-		car_speed = move_toward(car_speed, 0.0, 34.0 * delta)
 	var steer := Input.get_axis("move_right", "move_left")
+	var braking := Input.is_action_pressed("city_brake") or lock_drive
+	var drifting := braking and not lock_drive and absf(car_speed) > 9.0 and absf(steer) > 0.1
+	if braking and not drifting:
+		car_speed = move_toward(car_speed, 0.0, 34.0 * delta)
+	elif drifting:
+		car_speed = move_toward(car_speed, 0.0, 7.0 * delta)
 	if absf(car_speed) > 0.5:
 		var grip := clampf(absf(car_speed) / 8.0, 0.0, 1.0)
-		car.rotation.y += steer * 1.7 * delta * grip * signf(car_speed) * (0.88 + 0.12 * grip_k)
+		var turn := 1.7 * (1.45 if drifting else 1.0)
+		car.rotation.y += steer * turn * delta * grip * signf(car_speed) * (0.88 + 0.12 * grip_k)
+	var target_slip := steer * absf(car_speed) * 0.16 if drifting else 0.0
+	car_slip = move_toward(car_slip, target_slip, (7.0 if drifting else 22.0 * grip_k) * delta)
 	var fwd := -car.global_transform.basis.z
-	car.velocity = fwd * car_speed
+	var side := car.global_transform.basis.x
+	car.velocity = fwd * car_speed + side * car_slip
+	var model := car.get_node_or_null("Model") as Node3D
+	if model:
+		var frac := clampf(absf(car_speed) / maxf(vmax, 1.0), 0.0, 1.0)
+		var acc := (car_speed - _prev_car_speed) / maxf(delta, 0.001)
+		_car_roll = lerpf(_car_roll, -steer * frac * 0.09 * (1.5 if drifting else 1.0), minf(1.0, delta * 6.0))
+		_car_pitch = lerpf(_car_pitch, clampf(acc * 0.004, -0.05, 0.05), minf(1.0, delta * 6.0))
+		model.rotation.z = _car_roll
+		model.rotation.x = _car_pitch
+		Props.spin_wheels(model, car_speed * delta)
+		Props.steer_wheels(model, steer * 0.42)
+	_prev_car_speed = car_speed
 	car.move_and_slide()
 	if car.get_slide_collision_count() > 0:
 		var imp := absf(car_speed)
@@ -1055,6 +1085,11 @@ func on_bump(strength: float, police := false) -> void:
 	_bump_cd = 0.9
 	cam_shake = clampf(strength * 0.03, 0.12, 0.7)
 	toast("Cuidado com a viatura da Guarda!" if police else "Batida leve! Sem danos, mas dirija com cuidado.")
+	if wanted != null:
+		if police:
+			wanted.add_heat(1.0, "colisão com viatura")
+		elif strength > 4.0:
+			wanted.add_heat(0.4, "batida")
 	if missions:
 		missions.on_bump(strength)
 
@@ -1081,6 +1116,7 @@ func _toggle_car() -> void:
 			toast("Treino em andamento: corra a pé!")
 			return
 		in_car = true
+		car_slip = 0.0
 		player.visible = false
 		player_col.set_deferred("disabled", true)
 

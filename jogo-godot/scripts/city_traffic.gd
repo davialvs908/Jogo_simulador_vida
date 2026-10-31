@@ -94,7 +94,11 @@ func _make_model(kind: String, color: Color) -> Dictionary:
 	info["honk_label"] = hl_label
 	return info
 
-func _spawn(kind: String, color: Color) -> void:
+func spawn_at(kind: String, color: Color, start_node: int):
+	_spawn(kind, color, start_node)
+	return cars.back() if not cars.is_empty() else null
+
+func _spawn(kind: String, color: Color, start_node := -1) -> void:
 	var info := _make_model(kind, color)
 	var root: Node3D = info.node
 	var from := 0
@@ -102,7 +106,7 @@ func _spawn(kind: String, color: Color) -> void:
 	var pos := Vector3.ZERO
 	var fd := Vector3.FORWARD
 	for attempt in 30:
-		from = randi() % G.count()
+		from = start_node if start_node >= 0 else randi() % G.count()
 		var nb := G.neighbors(from)
 		to = nb[randi() % nb.size()]
 		fd = G.dir_between(from, to)
@@ -145,6 +149,9 @@ func _extend(c: Dictionary) -> void:
 		var d2 := G.dir_between(tnode, int(n))
 		var dp := fd.dot(d2)
 		var w := 0.55 if dp > 0.5 else (0.25 if d2.dot(r1) > 0.5 else 0.2)
+		if c.kind == "police" and hub.wanted != null and hub.wanted.stars() > 0:
+			var dd: float = G.node_pos(int(n)).distance_to(hub.ref_pos())
+			w = 0.1 + 6.0 * pow(maxf(0.0, 1.0 - dd / 160.0), 2.0)
 		cands.append(int(n))
 		weights.append(w)
 	var nxt: int = int(c.from)
@@ -392,3 +399,5 @@ func _update_police(dt: float) -> void:
 		if hub.city.has_item("radar"):
 			amount = int(amount * 0.6)
 		hub.fine_player(amount, "excesso de velocidade (%d km/h)" % int(sp * 3.6))
+		if hub.wanted != null:
+			hub.wanted.add_heat(1.0 if sp < SPEED_LIMIT * 1.6 else 2.0, "excesso de velocidade")
